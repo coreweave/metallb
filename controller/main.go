@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"strings"
 
 	"go.universe.tf/metallb/internal/allocator"
 	"go.universe.tf/metallb/internal/config"
@@ -129,6 +130,7 @@ func main() {
 		certServiceName     = flag.String("cert-service-name", "webhook-service", "The service name used to generate the TLS cert's hostname")
 		loadBalancerClass   = flag.String("lb-class", "", "load balancer class. When enabled, metallb will handle only services whose spec.loadBalancerClass matches the given lb class")
 		webhookMode         = flag.String("webhook-mode", "enabled", "webhook mode: can be enabled, disabled or only webhook if we want the controller to act as webhook endpoint only")
+		filterAnnotations   = flag.String("filter-annotations", os.Getenv("METALLB_SVC_ANNOTATION_FILTER"), "comma separated list of annotation keys to filter services by")
 	)
 	flag.Parse()
 
@@ -178,6 +180,7 @@ func main() {
 		CertDir:             *certDir,
 		CertServiceName:     *certServiceName,
 		LoadBalancerClass:   *loadBalancerClass,
+		FilterAnnotations:   strings.Split(*filterAnnotations, ","),
 	}
 	switch *webhookMode {
 	case "enabled":

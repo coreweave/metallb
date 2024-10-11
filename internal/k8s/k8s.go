@@ -112,6 +112,7 @@ type Config struct {
 	CertDir             string
 	CertServiceName     string
 	LoadBalancerClass   string
+	FilterAnnotations   []string
 	Listener
 }
 
@@ -119,6 +120,7 @@ type Config struct {
 //
 // The client uses processName to identify itself to the cluster
 // (e.g. when logging events).
+//
 //nolint:godot
 func New(cfg *Config) (*Client, error) {
 	namespaceSelector := cache.ObjectSelector{
@@ -256,6 +258,7 @@ func New(cfg *Config) (*Client, error) {
 			Endpoints:         needEndpoints,
 			Reload:            reloadChan,
 			LoadBalancerClass: cfg.LoadBalancerClass,
+			FilterAnnotations: cfg.FilterAnnotations,
 		}).SetupWithManager(mgr); err != nil {
 			level.Error(c.logger).Log("error", err, "unable to create controller", "service")
 			return nil, errors.Wrap(err, "failed to create service reconciler")
