@@ -47,6 +47,7 @@ type ServiceReconciler struct {
 	Endpoints         NeedEndPoints
 	LoadBalancerClass string
 	Reload            chan event.GenericEvent
+	FilterAnnotations []string
 }
 
 func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -69,7 +70,7 @@ func (r *ServiceReconciler) reconcileService(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	if filterByLoadBalancerClass(service, r.LoadBalancerClass) {
+	if filterByLoadBalancerClass(service, r.LoadBalancerClass) || filterByLoadBalancerAnnotation(service, r.FilterAnnotations) {
 		level.Debug(r.Logger).Log("controller", "ServiceReconciler", "filtered service", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
@@ -176,6 +177,18 @@ func filterByLoadBalancerClass(service *v1.Service, loadBalancerClass string) bo
 	}
 	if *service.Spec.LoadBalancerClass != loadBalancerClass {
 		return true
+	}
+	return false
+}
+
+func filterByLoadBalancerAnnotation(service *v1.Service, filterAnnotations []string) bool {
+	if service == nil || len(filterAnnotations) == 0 || service.Annotations == nil {
+		return false
+	}
+	for _, annotation := range filterAnnotations {
+		if service.Annotations[annotation] != "" {
+			return true
+		}
 	}
 	return false
 }
