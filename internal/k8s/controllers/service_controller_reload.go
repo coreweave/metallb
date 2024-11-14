@@ -69,7 +69,7 @@ func (r *ServiceReconciler) reprocessAll(ctx context.Context, req ctrl.Request) 
 
 	retry := false
 	for _, service := range services.Items {
-		if filterByLoadBalancerClass(&service, r.LoadBalancerClass) {
+		if filterByLoadBalancerClass(service, r.LoadBalancerClass) || filterByLoadBalancerAnnotation(service, r.FilterAnnotations) {
 			level.Debug(r.Logger).Log("controller", "ServiceReconciler", "filtered service", req.NamespacedName)
 			continue
 		}
