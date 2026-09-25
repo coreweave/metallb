@@ -204,9 +204,24 @@ func (c *controller) convergeBalancer(l log.Logger, key string, svc *v1.Service)
 
 	// At this point, we have an IP selected somehow, all that remains
 	// is to program the data plane.
+	// Carry over the IPMode of an ingress entry whose IP is unchanged. The
+	// apiserver defaults a missing ipMode to VIP, so dropping it here makes
+	// the status differ from the cached object on every reconcile and
+	// causes a redundant status update each time.
+	prevIPModes := map[string]*v1.LoadBalancerIPMode{}
+	for _, ing := range svc.Status.LoadBalancer.Ingress {
+		if ip := net.ParseIP(ing.IP); ip != nil && ing.IPMode != nil {
+			prevIPModes[ip.String()] = ing.IPMode
+		}
+	}
 	lbIngressIPs := []v1.LoadBalancerIngress{}
 	for _, lbIP := range lbIPs {
-		lbIngressIPs = append(lbIngressIPs, v1.LoadBalancerIngress{IP: lbIP.String()})
+		ingress := v1.LoadBalancerIngress{IP: lbIP.String()}
+		if mode, ok := prevIPModes[ingress.IP]; ok {
+			m := *mode
+			ingress.IPMode = &m
+		}
+		lbIngressIPs = append(lbIngressIPs, ingress)
 	}
 	svc.Status.LoadBalancer.Ingress = lbIngressIPs
 	if svc.Annotations == nil {

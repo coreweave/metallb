@@ -1488,3 +1488,78 @@ func TestControllerDualStackConfig(t *testing.T) {
 		t.Errorf("SetBalancer produced unexpected mutation (-want +got)\n%s", diff)
 	}
 }
+
+// TestControllerPreservesIPMode checks that a Service whose stored status
+// carries an ipMode (as defaulted by the apiserver) converges without a
+// status update, and that ipMode is not carried over to a different IP.
+func TestControllerPreservesIPMode(t *testing.T) {
+	k := &testK8S{t: t}
+	c := &controller{
+		ips:    allocator.New(noopCallback),
+		client: k,
+	}
+	l := log.NewNopLogger()
+
+	pools := &config.Pools{ByName: map[string]*config.Pool{
+		"default": {
+			Name:       "default",
+			AutoAssign: true,
+			CIDR:       []*net.IPNet{ipnet("1.2.3.0/24")},
+		},
+	}}
+	if c.SetPools(l, pools) == controllers.SyncStateError {
+		t.Fatalf("SetPools failed")
+	}
+
+	svc := &v1.Service{
+		Spec: v1.ServiceSpec{
+			Type:       "LoadBalancer",
+			ClusterIPs: []string{"1.2.3.4"},
+		},
+	}
+	if c.SetBalancer(l, "test", svc, []discovery.EndpointSlice{}) == controllers.SyncStateError {
+		t.Fatalf("SetBalancer failed")
+	}
+	gotSvc := k.gotService(svc)
+	if gotSvc == nil || len(gotSvc.Status.LoadBalancer.Ingress) != 1 {
+		t.Fatalf("expected an IP to be allocated, got %v", gotSvc)
+	}
+
+	for _, mode := range []v1.LoadBalancerIPMode{v1.LoadBalancerIPModeVIP, v1.LoadBalancerIPModeProxy} {
+		// Simulate the object as persisted and cached: the apiserver filled
+		// in ipMode, and the controller's pool annotation was written.
+		stored := gotSvc.DeepCopy()
+		m := mode
+		stored.Status.LoadBalancer.Ingress[0].IPMode = &m
+		stored.Annotations = map[string]string{AnnotationIPAllocateFromPool: "default"}
+
+		k.reset()
+		if c.SetBalancer(l, "test", stored, []discovery.EndpointSlice{}) == controllers.SyncStateError {
+			t.Fatalf("SetBalancer failed")
+		}
+		if k.updateServiceStatus != nil {
+			t.Errorf("ipMode %s: converged service was updated again (-stored +written)\n%s",
+				mode, cmp.Diff(stored.Status, *k.updateServiceStatus))
+		}
+	}
+
+	// A different requested IP must not inherit the old entry's ipMode.
+	stored := gotSvc.DeepCopy()
+	vip := v1.LoadBalancerIPModeVIP
+	stored.Status.LoadBalancer.Ingress[0].IPMode = &vip
+	stored.Annotations = map[string]string{
+		AnnotationIPAllocateFromPool: "default",
+		AnnotationLoadBalancerIPs:    "1.2.3.5",
+	}
+	k.reset()
+	if c.SetBalancer(l, "test", stored, []discovery.EndpointSlice{}) == controllers.SyncStateError {
+		t.Fatalf("SetBalancer failed")
+	}
+	want := statusAssigned([]string{"1.2.3.5"})
+	if k.updateServiceStatus == nil {
+		t.Fatalf("changing the requested IP did not update the status")
+	}
+	if diff := cmp.Diff(want, *k.updateServiceStatus); diff != "" {
+		t.Errorf("unexpected status after IP change (-want +got)\n%s", diff)
+	}
+}
